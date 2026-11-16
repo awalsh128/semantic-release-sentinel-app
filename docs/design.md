@@ -69,12 +69,14 @@ invalid one produces a neutral check explaining the error, not a crash.
 
 ```yaml
 merge-strategy: squash        # squash | merge | rebase
-release-branches: [main]      # globs; maintenance branches like 1.x
+release-branches: [main]      # exact names or * wildcards, e.g. [main, "1.x", "release/*"]
+tag-format: "v${version}"     # semantic-release's tagFormat
 pre-1-0-breaking: major       # major | minor
-deps-bump: patch              # patch | none
-paths:                        # monorepo scopes; omit for the whole repository
-  packages/api: { tag-prefix: api-v }
+deps-bump: patch              # patch | none: what fix(deps) releases
 ```
+
+Unknown options are errors, so a typo is never silently ignored. Monorepo path scopes are planned
+but not supported yet, and `paths` is rejected until they are.
 
 ## Events and security
 
