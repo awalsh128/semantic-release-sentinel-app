@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Creates or updates branch rulesets on a repo from JSON files (default: .github/rulesets/*.json).
 #
-# Usage: apply_rulesets.sh [-r owner/repo] [-a release_bot_app_id] [ruleset.json ...]
+# Usage: apply_rulesets.sh [-r owner/repo] [-a bypass_app_id] [ruleset.json ...]
 #   -r  Target repo (default: the current directory's GitHub repo).
-#   -a  GitHub App ID allowed to bypass the "main" ruleset, so the release workflow can push tags.
+#   -a  GitHub App ID allowed to bypass the "main" ruleset, so the release workflow can push tags
+#       (the Octo STS App, 801323; see docs/release-setup.md).
 set -euo pipefail
 
 repo=""
