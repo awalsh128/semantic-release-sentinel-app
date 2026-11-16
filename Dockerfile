@@ -7,6 +7,8 @@ COPY src ./src
 RUN npm run build
 
 FROM node:20-slim
+# Links the image to this repository on GHCR.
+LABEL org.opencontainers.image.source="https://github.com/awalsh128/semantic-release-sentinel-app"
 WORKDIR /usr/src/app
 ENV NODE_ENV="production"
 COPY package.json package-lock.json ./
