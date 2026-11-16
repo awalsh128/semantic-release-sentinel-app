@@ -65,7 +65,8 @@ deps-bump: patch              # patch | none: what fix(deps) releases
 - **Squash uses the PR title only.** GitHub's default squash message is built from the commits, so
   set the repository's squash merge default to the PR title and description, or the preview can
   differ from the real release.
-- Tags aren't checked for reachability from the base branch, and prerelease tags are ignored.
+- Tags aren't checked for reachability from the base branch, and prerelease tags are ignored. Only
+  the first 1,000 matching tags are read; beyond that the preview says it may be inaccurate.
 - GitHub lists at most 250 commits per pull request; beyond that the preview says it may be
   inaccurate.
 - Monorepo path scopes aren't supported yet.

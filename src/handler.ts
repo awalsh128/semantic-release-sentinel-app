@@ -8,12 +8,16 @@ import {
   renderReport,
   type Report,
 } from "./report.js";
-import { nextVersion } from "./version.js";
+import { nextVersion, tagPrefix } from "./version.js";
 
 const CONFIG_PATH = ".github/semantic-release-sentinel.yml";
 const CHECK_NAME = "Release preview";
 /** GitHub's pulls.listCommits returns at most this many commits. */
 const COMMIT_LIST_LIMIT = 250;
+const PAGE_SIZE = 100;
+/** Bounds on the pages read per event, so a repository with many tags or comments can't multiply API calls. */
+const MAX_TAG_PAGES = 10;
+const MAX_COMMENT_PAGES = 5;
 
 type PullRequestContext = Context<"pull_request">;
 
@@ -64,12 +68,16 @@ export function createHandler(app: Probot) {
 
     const { commits, truncated } = await pullRequestCommits(context, config.mergeStrategy);
     const bump = await computeBump(commits, { depsBump: config.depsBump });
-    const refs = await octokit.paginate(octokit.rest.git.listMatchingRefs, {
-      owner,
-      repo,
-      ref: "tags/",
-      per_page: 100,
-    });
+    // Only the tags that match the tag format, and only the first pages of them.
+    const { items: refs, truncated: tagsTruncated } = await listPages(
+      octokit.paginate.iterator(octokit.rest.git.listMatchingRefs, {
+        owner,
+        repo,
+        ref: `tags/${tagPrefix(config.tagFormat)}`,
+        per_page: PAGE_SIZE,
+      }),
+      MAX_TAG_PAGES,
+    );
     const version = nextVersion({
       tags: refs.map((ref) => ref.ref.replace(/^refs\/tags\//, "")),
       bump,
@@ -77,11 +85,18 @@ export function createHandler(app: Probot) {
       branch: pr.base.ref,
       pre1Breaking: config.pre1Breaking,
     });
-    const notes = truncated
-      ? [
-          `Only the first ${COMMIT_LIST_LIMIT} commits of this pull request were analyzed (GitHub's listing limit), so the bump may be inaccurate.`,
-        ]
-      : [];
+    const notes = [
+      ...(truncated
+        ? [
+            `Only the first ${COMMIT_LIST_LIMIT} commits of this pull request were analyzed (GitHub's listing limit), so the bump may be inaccurate.`,
+          ]
+        : []),
+      ...(tagsTruncated
+        ? [
+            `Only the first ${MAX_TAG_PAGES * PAGE_SIZE} tags were read (GitHub lists them alphabetically), so the next version may be inaccurate.`,
+          ]
+        : []),
+    ];
     await publish(context, id, renderReport(version, bump, notes), {
       check: "upsert",
       comment: "upsert",
@@ -140,12 +155,17 @@ async function writeComment(
   const { owner, repo } = context.repo();
   const { octokit } = context;
   const issue_number = context.payload.pull_request.number;
-  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
-    owner,
-    repo,
-    issue_number,
-    per_page: 100,
-  });
+  // The app's comment is created with the first preview, so it is near the start. Scanning only the
+  // first pages keeps a very long thread from multiplying API calls.
+  const { items: comments } = await listPages(
+    octokit.paginate.iterator(octokit.rest.issues.listComments, {
+      owner,
+      repo,
+      issue_number,
+      per_page: PAGE_SIZE,
+    }),
+    MAX_COMMENT_PAGES,
+  );
   // Another bot (or a person quoting us) can carry the marker; only touch what this app posted.
   const existing = comments.find(
     (comment) =>
@@ -156,6 +176,23 @@ async function writeComment(
   } else if (mode === "upsert") {
     await octokit.rest.issues.createComment({ owner, repo, issue_number, body });
   }
+}
+
+/** Reads at most `maxPages` pages, and reports whether the list had more. */
+async function listPages<T>(
+  pages: AsyncIterable<{ data: T[]; headers: { link?: string } }>,
+  maxPages: number,
+): Promise<{ items: T[]; truncated: boolean }> {
+  const items: T[] = [];
+  let count = 0;
+  for await (const page of pages) {
+    items.push(...page.data);
+    count += 1;
+    if (count >= maxPages) {
+      return { items, truncated: /rel="next"/.test(page.headers.link ?? "") };
+    }
+  }
+  return { items, truncated: false };
 }
 
 /**

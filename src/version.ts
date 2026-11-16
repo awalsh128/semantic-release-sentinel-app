@@ -4,6 +4,11 @@ import type { Bump } from "./bump.js";
 /** semantic-release's maintenance branch names: N.x, N.x.x and N.N.x. */
 const MAINTENANCE = /^\d+\.(x|x\.x|\d+\.x)$/;
 
+/** The literal text before ${version} in a tagFormat, which every release tag starts with. */
+export function tagPrefix(tagFormat = "v${version}"): string {
+  return tagFormat.split("${version}")[0];
+}
+
 export type NextVersion =
   | { kind: "release"; current: string; next: string }
   | { kind: "none"; current: string }
