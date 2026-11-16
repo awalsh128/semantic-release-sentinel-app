@@ -19,7 +19,14 @@ on:
 permissions: {}
 
 jobs:
+  # Gate: nothing is tagged or pushed unless type-check and tests pass.
+  ci:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # One release at a time; never cancel one that is tagging.
