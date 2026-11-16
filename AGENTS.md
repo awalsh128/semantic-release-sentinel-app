@@ -43,5 +43,7 @@ before starting one, and the `progress-notes` skill for work that spans sessions
 
 ## More context
 
+- `docs/design.md`: read it before changing what the app posts, how the bump is computed, or the
+  config format.
 - `.out-of-scope/` lists ideas that were considered and rejected. Check it before proposing a
   feature.
