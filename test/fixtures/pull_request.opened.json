@@ -1,0 +1,12 @@
+{
+  "action": "opened",
+  "number": 7,
+  "pull_request": {
+    "number": 7,
+    "title": "feat: add thing",
+    "head": { "sha": "headsha1", "ref": "feat/thing" },
+    "base": { "ref": "main", "sha": "basesha1" }
+  },
+  "repository": { "name": "demo", "owner": { "login": "acme" } },
+  "installation": { "id": 2 }
+}

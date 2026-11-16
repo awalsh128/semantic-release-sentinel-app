@@ -1,0 +1,17 @@
+# GitHub App manifest. Changing this file does not update an existing App; edit the settings at
+# github.com/settings/apps/<app-name> to match. Keep permissions minimal.
+# https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
+
+default_events:
+  - pull_request # opened, edited, synchronize, reopened: recompute the bump preview
+  - merge_group # merge queue runs
+  - push # release branches, to know what is already released
+
+default_permissions:
+  metadata: read
+  contents: read # commits and tags, to compute the bump
+  pull_requests: read # PR title, commits and merge settings
+  checks: write # the advisory check run
+  issues: write # the sticky PR comment (PR comments use the issues API)
+
+# public: false

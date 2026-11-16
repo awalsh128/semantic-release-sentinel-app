@@ -1,0 +1,79 @@
+name: Release
+
+# Releases with semantic-release on every push to main: a git tag and GitHub release, then the
+# container image is pushed to GHCR tagged with the new version and 'latest'. Pushes that
+# release nothing (docs, chore, ...) skip the image.
+#
+# Start the version line at 0.x by tagging the first commit v0.0.0 before the first run;
+# otherwise semantic-release's first release is always 1.0.0.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Run the release process without tagging or pushing anything"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  # Gate: nothing is tagged or pushed unless type-check and tests pass.
+  ci:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # One release at a time; never cancel one that is tagging.
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      contents: write # Tags and GitHub releases
+      issues: write # semantic-release comments
+      pull-requests: write # semantic-release comments
+      packages: write # Push the image to GHCR
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0 # semantic-release reads every commit and tag since the last release
+
+      # The release tools are pinned here rather than in package.json, so their dependencies don't
+      # reach the project's audit.
+      - name: Release with semantic-release
+        id: semantic-release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          args=()
+          [[ "$DRY_RUN" == "true" ]] && args+=(--dry-run)
+          npx --yes \
+            --package semantic-release@25.0.9 \
+            --package conventional-changelog-conventionalcommits@9.3.1 \
+            --package @semantic-release/exec@7.1.0 \
+            semantic-release "${args[@]}"
+
+      - name: Push image to GHCR
+        if: ${{ steps.semantic-release.outputs.version != '' }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.semantic-release.outputs.version }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${REPO,,}"
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker build -t "$image:$VERSION" -t "$image:latest" .
+          docker push "$image:$VERSION"
+          docker push "$image:latest"
