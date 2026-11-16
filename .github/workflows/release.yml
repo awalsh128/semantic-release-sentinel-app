@@ -6,6 +6,11 @@ name: Release
 #
 # Start the version line at 0.x by tagging the first commit v0.0.0 before the first run;
 # otherwise semantic-release's first release is always 1.0.0.
+#
+# main is protected by a ruleset (.github/rulesets/main.json) that GITHUB_TOKEN can't bypass, so the
+# tag is pushed with a short-lived token from Octo STS, which the ruleset lets bypass. The token
+# comes from this run's OIDC identity under the trust policy .github/chainguard/release.sts.yaml, so
+# there is no stored secret. See docs/release-setup.md.
 on:
   push:
     branches: [main]
@@ -34,6 +39,7 @@ jobs:
       group: release
       cancel-in-progress: false
     permissions:
+      id-token: write # Federate an Octo STS token from this run's OIDC identity
       contents: write # Tags and GitHub releases
       issues: write # semantic-release comments
       pull-requests: write # semantic-release comments
@@ -43,6 +49,17 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # semantic-release reads every commit and tag since the last release
+          persist-credentials: false # so git pushes with the Octo STS token, not GITHUB_TOKEN
+
+      # GITHUB_TOKEN can't bypass main's ruleset. Octo STS exchanges this run's OIDC identity for a
+      # token with the permissions in .github/chainguard/release.sts.yaml, and only for release.yml
+      # running on main.
+      - name: Get a release token from Octo STS
+        id: octo-sts
+        uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        with:
+          scope: ${{ github.repository }}
+          identity: release
 
       # The release tools are pinned here rather than in package.json, so their dependencies don't
       # reach the project's audit.
@@ -50,6 +67,9 @@ jobs:
         id: semantic-release
         shell: bash
         env:
+          # semantic-release pushes the tag with GIT_CREDENTIALS and calls the GitHub API (release,
+          # comments) with GITHUB_TOKEN, so the Octo STS token only needs Contents: write.
+          GIT_CREDENTIALS: x-access-token:${{ steps.octo-sts.outputs.token }}
           GITHUB_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
