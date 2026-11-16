@@ -18,7 +18,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "conventional-changelog-conventionalcommits": "^9.3.1",
+    "conventional-changelog-conventionalcommits": "^10.4.1",
     "conventional-commits-filter": "^6.0.1",
     "conventional-commits-parser": "^7.1.4",
     "probot": "^14.3.2",
