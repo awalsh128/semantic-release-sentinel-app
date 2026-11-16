@@ -31,7 +31,12 @@ export function createHandler(app: Probot) {
     (appId ??= app
       .auth()
       .then((octokit) => octokit.rest.apps.getAuthenticated())
-      .then(({ data }) => data!.id));
+      .then(({ data }) => data!.id)
+      .catch((error) => {
+        // Don't cache a failure: one bad lookup must not break every later event.
+        appId = undefined;
+        throw error;
+      }));
 
   return async function handlePullRequest(context: PullRequestContext): Promise<void> {
     const { octokit } = context;
@@ -74,7 +79,7 @@ export function createHandler(app: Probot) {
     });
     const notes = truncated
       ? [
-          `Only the first ${COMMIT_LIST_LIMIT} commits of this pull request were analyzed (GitHub's listing limit), so the bump may be understated.`,
+          `Only the first ${COMMIT_LIST_LIMIT} commits of this pull request were analyzed (GitHub's listing limit), so the bump may be inaccurate.`,
         ]
       : [];
     await publish(context, id, renderReport(version, bump, notes), {
@@ -175,7 +180,7 @@ async function pullRequestCommits(
     .filter((commit) => strategy === "merge" || commit.parents.length <= 1)
     .map((commit) => ({ hash: commit.sha, message: commit.commit.message }))
     .reverse();
-  return { commits, truncated: listed.length >= COMMIT_LIST_LIMIT };
+  return { commits, truncated: (pr.commits ?? 0) > listed.length };
 }
 
 /** True when the branch equals a configured name or matches a pattern, where * matches any characters. */

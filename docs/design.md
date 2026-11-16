@@ -45,7 +45,8 @@ Input depends on the merge strategy (config `merge-strategy`, default `squash`):
 
 Commits are analyzed newest first, like `git log`, and a commit is dropped together with the
 revert that undoes it, as in commit-analyzer. GitHub lists at most 250 commits per pull request;
-past that the preview says the bump may be understated.
+past that, going by the commit count in the webhook payload, the preview says the bump may be
+inaccurate (cut-off commits can also hide a revert, so it can be overstated).
 
 Rules follow semantic-release's commit-analyzer defaults with the `conventionalcommits` preset:
 `!` or a `BREAKING CHANGE:` footer is major, `feat` is minor, `fix` and `perf` are patch, and
@@ -61,7 +62,7 @@ Edge cases:
 | Not a Conventional Commit | Counts as none; the summary says so. |
 | Pre-1.0 breaking change | See [Pre-1.0](#pre-10). |
 | Maintenance branch (`1.x`, `1.2.x`) | The next version is capped to the branch's range, as semantic-release does. |
-| Target branch is not a release branch | No check, no comment. |
+| Target branch is not a release branch | Nothing is created. An existing check and comment are updated to "Not a release branch". |
 
 ### Pre-1.0
 

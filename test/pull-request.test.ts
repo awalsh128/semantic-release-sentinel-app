@@ -156,11 +156,27 @@ describe("pull_request events", () => {
       expect(created.checkRuns[0].output.title).toBe("Releases nothing");
     });
 
-    test("a PR at GitHub's 250-commit listing limit says the bump may be understated", async () => {
-      const commits = Array.from({ length: 250 }, (_, i) => ({ message: `docs: note ${i}` }));
-      const created = await run("rebase", commits);
+    // `commits` in the payload is the PR's real commit count; GitHub lists at most 250 of them.
+    const listedAtLimit = Array.from({ length: 250 }, (_, i) => ({ message: `docs: note ${i}` }));
+    const runWithCount = async (count: number) => {
+      const github = mockGitHub({ tags: ["v1.0.0"], config: "merge-strategy: rebase", commits: listedAtLimit });
+      await createProbot().receive({
+        name: "pull_request",
+        payload: pullRequestEvent({ commits: count }) as any,
+      });
+      return github.written.created;
+    };
+
+    test("a PR with more commits than GitHub lists says the bump may be inaccurate", async () => {
+      const created = await runWithCount(300);
       expect(created.comments[0].body).toContain("first 250 commits");
+      expect(created.comments[0].body).toContain("inaccurate");
       expect(created.checkRuns[0].output.summary).toContain("first 250 commits");
+    });
+
+    test("a PR with exactly 250 commits is fully analyzed and gets no note", async () => {
+      const created = await runWithCount(250);
+      expect(created.comments[0].body).not.toContain("first 250 commits");
     });
   });
 
@@ -263,5 +279,18 @@ describe("pull_request events", () => {
       expect(await deliver(signature)).toBe(200);
       await vi.waitFor(() => expect(github.written.created.checkRuns).toHaveLength(1));
     });
+  });
+
+  test("a failed lookup of the app's own id is retried on the next event, not cached", async () => {
+    const probot = createProbot();
+    nock("https://api.github.com").get("/app").reply(500, { message: "Server Error" });
+    await expect(
+      probot.receive({ name: "pull_request", payload: pullRequestEvent() as any }),
+    ).rejects.toThrow();
+
+    const github = mockGitHub({ tags: ["v1.0.0"] });
+    await probot.receive({ name: "pull_request", payload: pullRequestEvent() as any });
+
+    expect(github.written.created.checkRuns).toHaveLength(1);
   });
 });
