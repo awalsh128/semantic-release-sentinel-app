@@ -1,10 +1,12 @@
 name: CI
 
-# Type-checks and tests the app. Runs on pull requests, and release.yml calls it so a release only
-# happens when it passes. There is no push trigger: that would run it twice on every push to main.
+# Type-checks and tests the app on pull requests and on staging. After every job passes on a push to
+# staging, it releases a candidate (see release.yml). main only ever fast-forwards to a staging commit
+# that passed here (see promote.yml), so it has no push trigger of its own.
 on:
   pull_request:
-  workflow_call:
+  push:
+    branches: [staging]
 
 permissions:
   contents: read
@@ -32,3 +34,16 @@ jobs:
 
       - name: Test
         run: npx vitest run
+
+  # Release candidates are only cut from staging commits that pass CI.
+  release-candidate:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/staging' }}
+    needs: test
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      issues: write
+      packages: write
+      pull-requests: write
+    uses: ./.github/workflows/release.yml

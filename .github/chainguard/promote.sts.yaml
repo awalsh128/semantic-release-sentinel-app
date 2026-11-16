@@ -1,0 +1,10 @@
+# Octo STS trust policy for the promote workflow (see docs/release-setup.md). Only promote.yml running
+# on staging gets a token, with just the permission needed to fast-forward main.
+issuer: https://token.actions.githubusercontent.com
+subject_pattern: "repo:awalsh128@2087466/semantic-release-sentinel-app@1459438369:.*"
+claim_pattern:
+  ref: "refs/heads/staging"
+  job_workflow_ref: "awalsh128/semantic-release-sentinel-app/\\.github/workflows/promote\\.yml@refs/heads/staging"
+
+permissions:
+  contents: write

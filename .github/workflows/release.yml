@@ -1,19 +1,22 @@
 name: Release
 
-# Releases with semantic-release on every push to main: a git tag and GitHub release, then the
-# container image is pushed to GHCR tagged with the new version and 'latest'. Pushes that
-# release nothing (docs, chore, ...) skip the image.
+# Releases with semantic-release, always gated by CI: a git tag and GitHub release, then the
+# container image is pushed to GHCR. Runs that release nothing (docs, chore, ...) skip the image.
+# - staging: ci.yml calls this after every CI job passes, releasing a candidate (e.g. 0.2.0-rc.1).
+#   The image is tagged with that version only, never 'latest'.
+# - main: promote.yml starts this after fast-forwarding main to a CI-passed staging commit,
+#   releasing an official version (e.g. 0.2.0). The image is also tagged 'latest'.
+# - Manual runs first require a successful CI run for the commit.
 #
 # Start the version line at 0.x by tagging the first commit v0.0.0 before the first run;
 # otherwise semantic-release's first release is always 1.0.0.
 #
-# main is protected by a ruleset (.github/rulesets/main.json) that GITHUB_TOKEN can't bypass, so the
-# tag is pushed with a short-lived token from Octo STS, which the ruleset lets bypass. The token
-# comes from this run's OIDC identity under the trust policy .github/chainguard/release.sts.yaml, so
-# there is no stored secret. See docs/release-setup.md.
+# main, staging and v* tags are protected by rulesets (.github/rulesets) that GITHUB_TOKEN can't
+# bypass, so the tag is pushed with a short-lived token from Octo STS, which the rulesets let
+# bypass. The token comes from this run's OIDC identity under the trust policy
+# .github/chainguard/release.sts.yaml, so there is no stored secret. See docs/release-setup.md.
 on:
-  push:
-    branches: [main]
+  workflow_call:
   workflow_dispatch:
     inputs:
       dry-run:
@@ -24,21 +27,15 @@ on:
 permissions: {}
 
 jobs:
-  # Gate: nothing is tagged or pushed unless type-check and tests pass.
-  ci:
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci.yml
-
   release:
-    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # One release at a time; never cancel one that is tagging.
     concurrency:
-      group: release
+      group: release-${{ github.ref }}
       cancel-in-progress: false
     permissions:
+      actions: read # Check CI results on manual runs
       id-token: write # Federate an Octo STS token from this run's OIDC identity
       contents: write # Tags and GitHub releases
       issues: write # semantic-release comments
@@ -51,9 +48,16 @@ jobs:
           fetch-depth: 0 # semantic-release reads every commit and tag since the last release
           persist-credentials: false # so git pushes with the Octo STS token, not GITHUB_TOKEN
 
-      # GITHUB_TOKEN can't bypass main's ruleset. Octo STS exchanges this run's OIDC identity for a
+      - name: Require CI success
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: ./.github/actions/require-ci-success
+        with:
+          sha: ${{ github.sha }}
+          token: ${{ github.token }}
+
+      # GITHUB_TOKEN can't bypass the rulesets. Octo STS exchanges this run's OIDC identity for a
       # token with the permissions in .github/chainguard/release.sts.yaml, and only for release.yml
-      # running on main.
+      # running on main or staging.
       - name: Get a release token from Octo STS
         id: octo-sts
         uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
@@ -90,10 +94,13 @@ jobs:
           REGISTRY_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
           REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           image="ghcr.io/${REPO,,}"
           echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-          docker build -t "$image:$VERSION" -t "$image:latest" .
-          docker push "$image:$VERSION"
-          docker push "$image:latest"
+          tags=(-t "$image:$VERSION")
+          # Candidates (staging) are never 'latest'.
+          [[ "$REF" == "refs/heads/main" ]] && tags+=(-t "$image:latest")
+          docker build "${tags[@]}" .
+          docker push --all-tags "$image"

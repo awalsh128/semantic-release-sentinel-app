@@ -15,7 +15,10 @@
 ## Warnings
 
 - Commits and PR titles must follow Conventional Commits (commitlint enforces it). semantic-release
-  derives the version from them on every push to `main`; don't edit `version` in `package.json`.
+  derives the version from them when `staging` (candidates) or `main` (official) is released; don't
+  edit `version` in `package.json`.
+- Open PRs into `staging`. `main` only fast-forwards from `staging` through `promote.yml`; never
+  merge or push to it. Direct pushes to `staging` and `main` are blocked by rulesets.
 - `lib/` is build output; never edit it by hand.
 - Never commit `.env` or `*.pem` files (see `.env.example`).
 
@@ -45,7 +48,7 @@ before starting one, and the `progress-notes` skill for work that spans sessions
 
 - `docs/design.md`: read it before changing what the app posts, how the bump is computed, or the
   config format.
-- `docs/release-setup.md`: read it before changing `release.yml`, the `main` ruleset or branch
-  protection.
+- `docs/release-setup.md`: read it before changing `release.yml`, the rulesets, the promote
+  flow or branch protection.
 - `.out-of-scope/` lists ideas that were considered and rejected. Check it before proposing a
   feature.
