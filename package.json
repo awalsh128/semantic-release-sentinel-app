@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "conventional-changelog-conventionalcommits": "^9.3.1",
+    "conventional-commits-filter": "^6.0.1",
     "conventional-commits-parser": "^7.1.4",
     "probot": "^14.3.2",
     "semver": "^7.8.6",

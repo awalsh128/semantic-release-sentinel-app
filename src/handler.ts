@@ -1,49 +1,106 @@
-import type { Context } from "probot";
-import { computeBump } from "./bump.js";
+import type { Context, Probot } from "probot";
+import { computeBump, type CommitInput } from "./bump.js";
 import { parseConfig, type Config } from "./config.js";
-import { COMMENT_MARKER, renderConfigError, renderReport, type Report } from "./report.js";
+import {
+  COMMENT_MARKER,
+  renderConfigError,
+  renderNotReleaseBranch,
+  renderReport,
+  type Report,
+} from "./report.js";
 import { nextVersion } from "./version.js";
 
 const CONFIG_PATH = ".github/semantic-release-sentinel.yml";
 const CHECK_NAME = "Release preview";
+/** GitHub's pulls.listCommits returns at most this many commits. */
+const COMMIT_LIST_LIMIT = 250;
 
-export async function handlePullRequest(context: Context<"pull_request">): Promise<void> {
-  const { octokit } = context;
-  const { owner, repo } = context.repo();
-  const pr = context.payload.pull_request;
+type PullRequestContext = Context<"pull_request">;
 
-  const parsed = parseConfig(await readConfig(context, pr.base.ref));
-  if (!parsed.ok) {
-    await upsertCheck(context, renderConfigError(parsed.errors));
-    return;
-  }
-  const config = parsed.config;
-  if (!isReleaseBranch(pr.base.ref, config.releaseBranches)) return;
+/**
+ * "upsert" creates the output if it is missing. "update-only" only refreshes output that already
+ * exists, so a pull request that has nothing to preview never gets new noise, but an earlier
+ * "releases X" is not left standing once it stops being true.
+ */
+type Mode = "upsert" | "update-only";
 
-  const messages = await commitMessages(context, config.mergeStrategy);
-  const bump = await computeBump(messages, { depsBump: config.depsBump });
-  const refs = await octokit.paginate(octokit.rest.git.listMatchingRefs, {
-    owner,
-    repo,
-    ref: "tags/",
-    per_page: 100,
-  });
-  const tags = refs.map((ref) => ref.ref.replace(/^refs\/tags\//, ""));
-  const version = nextVersion({
-    tags,
-    bump,
-    tagFormat: config.tagFormat,
-    branch: pr.base.ref,
-    pre1Breaking: config.pre1Breaking,
-  });
-  const report = renderReport(version, bump);
+export function createHandler(app: Probot) {
+  // This app's own id, used to ignore check runs and comments from anyone else. Looked up once.
+  let appId: Promise<number> | undefined;
+  const ownAppId = () =>
+    (appId ??= app
+      .auth()
+      .then((octokit) => octokit.rest.apps.getAuthenticated())
+      .then(({ data }) => data!.id));
 
-  await upsertCheck(context, report);
-  if (report.comment !== null) await upsertComment(context, report.comment);
+  return async function handlePullRequest(context: PullRequestContext): Promise<void> {
+    const { octokit } = context;
+    const { owner, repo } = context.repo();
+    const pr = context.payload.pull_request;
+    const id = await ownAppId();
+
+    // Read from the base branch, never the head, so a pull request can't change its own rules.
+    const parsed = parseConfig(await readConfig(context, pr.base.ref));
+    if (!parsed.ok) {
+      await publish(context, id, renderConfigError(parsed.errors), {
+        check: "upsert",
+        comment: "update-only",
+      });
+      return;
+    }
+    const config = parsed.config;
+    if (!isReleaseBranch(pr.base.ref, config.releaseBranches)) {
+      await publish(context, id, renderNotReleaseBranch(pr.base.ref), {
+        check: "update-only",
+        comment: "update-only",
+      });
+      return;
+    }
+
+    const { commits, truncated } = await pullRequestCommits(context, config.mergeStrategy);
+    const bump = await computeBump(commits, { depsBump: config.depsBump });
+    const refs = await octokit.paginate(octokit.rest.git.listMatchingRefs, {
+      owner,
+      repo,
+      ref: "tags/",
+      per_page: 100,
+    });
+    const version = nextVersion({
+      tags: refs.map((ref) => ref.ref.replace(/^refs\/tags\//, "")),
+      bump,
+      tagFormat: config.tagFormat,
+      branch: pr.base.ref,
+      pre1Breaking: config.pre1Breaking,
+    });
+    const notes = truncated
+      ? [
+          `Only the first ${COMMIT_LIST_LIMIT} commits of this pull request were analyzed (GitHub's listing limit), so the bump may be understated.`,
+        ]
+      : [];
+    await publish(context, id, renderReport(version, bump, notes), {
+      check: "upsert",
+      comment: "upsert",
+    });
+  };
 }
 
-/** Updates this head commit's check run if it exists, so edits never stack up duplicates. */
-async function upsertCheck(context: Context<"pull_request">, report: Report): Promise<void> {
+async function publish(
+  context: PullRequestContext,
+  appId: number,
+  report: Report,
+  modes: { check: Mode; comment: Mode },
+): Promise<void> {
+  await writeCheck(context, appId, report, modes.check);
+  if (report.comment !== null) await writeComment(context, appId, report.comment, modes.comment);
+}
+
+/** Writes this app's check run for the head commit, found by name and app so edits never stack up. */
+async function writeCheck(
+  context: PullRequestContext,
+  appId: number,
+  report: Report,
+  mode: Mode,
+): Promise<void> {
   const { owner, repo } = context.repo();
   const { octokit } = context;
   const head_sha = context.payload.pull_request.head.sha;
@@ -59,14 +116,22 @@ async function upsertCheck(context: Context<"pull_request">, report: Report): Pr
     repo,
     ref: head_sha,
     check_name: CHECK_NAME,
+    app_id: appId,
   });
   const existing = data.check_runs[0];
   if (existing) await octokit.rest.checks.update({ ...fields, check_run_id: Number(existing.id) });
-  else await octokit.rest.checks.create({ ...fields, name: CHECK_NAME, head_sha });
+  else if (mode === "upsert") {
+    await octokit.rest.checks.create({ ...fields, name: CHECK_NAME, head_sha });
+  }
 }
 
-/** Updates the app's single comment on the pull request, found by its marker, or creates it. */
-async function upsertComment(context: Context<"pull_request">, body: string): Promise<void> {
+/** Writes the app's single comment on the pull request, found by its marker and by being ours. */
+async function writeComment(
+  context: PullRequestContext,
+  appId: number,
+  body: string,
+  mode: Mode,
+): Promise<void> {
   const { owner, repo } = context.repo();
   const { octokit } = context;
   const issue_number = context.payload.pull_request.number;
@@ -76,28 +141,41 @@ async function upsertComment(context: Context<"pull_request">, body: string): Pr
     issue_number,
     per_page: 100,
   });
+  // Another bot (or a person quoting us) can carry the marker; only touch what this app posted.
   const existing = comments.find(
-    (comment) => comment.user?.type === "Bot" && comment.body?.includes(COMMENT_MARKER),
+    (comment) =>
+      comment.performed_via_github_app?.id === appId && comment.body?.includes(COMMENT_MARKER),
   );
-  if (existing) await octokit.rest.issues.updateComment({ owner, repo, comment_id: Number(existing.id), body });
-  else await octokit.rest.issues.createComment({ owner, repo, issue_number, body });
+  if (existing) {
+    await octokit.rest.issues.updateComment({ owner, repo, comment_id: Number(existing.id), body });
+  } else if (mode === "upsert") {
+    await octokit.rest.issues.createComment({ owner, repo, issue_number, body });
+  }
 }
 
-/** What semantic-release will see after the merge: the PR title if squashed, else its commits. */
-async function commitMessages(
-  context: Context<"pull_request">,
+/**
+ * What semantic-release will analyze after the merge, newest first like `git log`: the PR title
+ * if squashed, else the PR's commits. Merge commits count for `merge`, where they reach the base
+ * branch, and not for `rebase`, where GitHub replays only the PR's own commits.
+ */
+async function pullRequestCommits(
+  context: PullRequestContext,
   strategy: Config["mergeStrategy"],
-): Promise<string[]> {
+): Promise<{ commits: CommitInput[]; truncated: boolean }> {
   const pr = context.payload.pull_request;
-  if (strategy === "squash") return [pr.title];
+  if (strategy === "squash") return { commits: [pr.title], truncated: false };
   const { owner, repo } = context.repo();
-  const commits = await context.octokit.paginate(context.octokit.rest.pulls.listCommits, {
+  const listed = await context.octokit.paginate(context.octokit.rest.pulls.listCommits, {
     owner,
     repo,
     pull_number: pr.number,
     per_page: 100,
   });
-  return commits.filter((c) => c.parents.length <= 1).map((c) => c.commit.message);
+  const commits = listed
+    .filter((commit) => strategy === "merge" || commit.parents.length <= 1)
+    .map((commit) => ({ hash: commit.sha, message: commit.commit.message }))
+    .reverse();
+  return { commits, truncated: listed.length >= COMMIT_LIST_LIMIT };
 }
 
 /** True when the branch equals a configured name or matches a pattern, where * matches any characters. */
@@ -110,7 +188,7 @@ function isReleaseBranch(branch: string, patterns: string[]): boolean {
 
 const escapeRegExp = (text: string) => text.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
 
-async function readConfig(context: Context<"pull_request">, ref: string) {
+async function readConfig(context: PullRequestContext, ref: string) {
   const { owner, repo } = context.repo();
   try {
     const { data } = await context.octokit.rest.repos.getContent({

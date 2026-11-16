@@ -23,9 +23,15 @@ Per pull request, kept current on every event:
 
 1. One **check run**, `Release preview`, conclusion `neutral`, updated in place on the same head
    commit and recreated for a new one. Title: `Releases 0.4.0 (minor)` or
-   `Releases nothing`. 
+   `Releases nothing`. Only this app's own check run is touched: it is matched by name and app id.
 2. One **sticky comment**, found by a hidden marker (`<!-- semantic-release-sentinel -->`) and
-   updated in place, never duplicated: "merging this releases 0.4.0 (minor)".
+   updated in place: "merging this releases 0.4.0 (minor)". Only a comment this app posted is
+   touched, matched by the marker and the app id.
+
+When there is nothing to preview, output that already exists is updated and none is created: a pull
+request retargeted to a non-release branch gets "Not a release branch", and a base config that
+turns invalid gets an "Invalid configuration" check and a paused comment, so a stale "releases X"
+never stays up. A repository with an invalid config gets the check on every pull request.
 
 ## Computing the bump
 
@@ -34,7 +40,12 @@ Input depends on the merge strategy (config `merge-strategy`, default `squash`):
 | Strategy | Input |
 | --- | --- |
 | `squash` | The PR title, which becomes the squash commit message. |
-| `merge`, `rebase` | Every commit in the PR, excluding merge commits from the base branch. |
+| `merge` | Every commit in the PR, including merge commits, which reach the base branch. |
+| `rebase` | Every commit in the PR except merge commits; GitHub replays only the PR's own commits. |
+
+Commits are analyzed newest first, like `git log`, and a commit is dropped together with the
+revert that undoes it, as in commit-analyzer. GitHub lists at most 250 commits per pull request;
+past that the preview says the bump may be understated.
 
 Rules follow semantic-release's commit-analyzer defaults with the `conventionalcommits` preset:
 `!` or a `BREAKING CHANGE:` footer is major, `feat` is minor, `fix` and `perf` are patch, and
@@ -63,6 +74,18 @@ changes to minor below 1.0 in its own release rules sets `pre-1-0-breaking: mino
 The highest release tag in the repository that matches the tag format (config `tag-format`, default
 `v${version}`), plus the bump. Prerelease tags are ignored. Tags are not checked for reachability
 from the base branch yet, so a tag that exists only on another branch can be picked up. No tag means no release history, and the preview says so instead of guessing.
+
+## Known limitations
+
+- **Squash uses the PR title only.** By default GitHub builds the squash commit from the commits:
+  a one-commit PR merges with that commit's title, and a multi-commit PR's message lists the
+  commits. So the PR title can differ from what semantic-release sees. Reading the repository's
+  `squash_merge_commit_title` and `squash_merge_commit_message` settings would fix it; for now,
+  set the repository to use the PR title and body for squash merges.
+- **Concurrent deliveries can duplicate the comment.** Two events handled at the same moment can
+  each see no comment and create one. The second then goes stale. It is rare and harmless, and a
+  fix (re-list and delete the newer duplicate) is not worth the extra calls yet.
+- **Tags are not checked for reachability** from the base branch.
 
 ## Configuration
 

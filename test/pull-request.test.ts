@@ -37,10 +37,11 @@ describe("pull_request events", () => {
   test("an edit updates the existing check run and the app's own comment instead of adding new ones", async () => {
     const github = mockGitHub({
       tags: ["v1.0.0"],
-      checkRuns: [{ id: 55 }],
+      checkRuns: [{ id: 55 }, { id: 56, app: { id: 999 } }],
       comments: [
-        { id: 98, body: "<!-- semantic-release-sentinel --> quoted by a person", user: { type: "User" } },
-        { id: 99, body: "<!-- semantic-release-sentinel -->\nold", user: { type: "Bot" } },
+        { id: 97, body: "<!-- semantic-release-sentinel -->\nquoted by a person", performed_via_github_app: null, user: { type: "User" } },
+        { id: 98, body: "<!-- semantic-release-sentinel -->\nfrom another app", performed_via_github_app: { id: 999 } },
+        { id: 99, body: "<!-- semantic-release-sentinel -->\nold" },
       ],
     });
 
@@ -91,7 +92,7 @@ describe("pull_request events", () => {
 
     test("a bump outside a maintenance branch's range is flagged", async () => {
       const { check, comment } = await run(
-        { tags: ["v1.5.0", "v2.0.0"], config: "release-branches: ['1.x']" },
+        { tags: ["v1.5.0", "v2.0.0"], config: "release-branches: ['1.x']", base: "1.x" },
         { title: "feat!: drop v1", base: { ref: "1.x", sha: "basesha1" } },
       );
       expect(check).toMatchObject({
@@ -105,7 +106,7 @@ describe("pull_request events", () => {
 
   describe("release branches", () => {
     const receive = (base: string, config?: string) => {
-      const github = mockGitHub({ tags: ["v1.0.0"], config });
+      const github = mockGitHub({ tags: ["v1.0.0"], config, base });
       return createProbot()
         .receive({
           name: "pull_request",
@@ -117,7 +118,7 @@ describe("pull_request events", () => {
     test("a PR into a branch that is not a release branch gets nothing", async () => {
       const github = await receive("develop");
       expect(github.written.created).toEqual({ checkRuns: [], comments: [] });
-      expect(github.requested.filter((path) => !path.includes("/contents/"))).toEqual([]);
+      expect(github.requested.filter((path) => /matching-refs|\/pulls\//.test(path))).toEqual([]);
     });
 
     test("release-branches accepts exact names and * wildcards", async () => {
@@ -129,23 +130,65 @@ describe("pull_request events", () => {
   });
 
   describe("merge strategies other than squash", () => {
-    test.each(["merge", "rebase"])("%s uses the PR's commits, not its title, and skips merge commits", async (strategy) => {
-      const github = mockGitHub({
-        tags: ["v1.0.0"],
-        config: `merge-strategy: ${strategy}`,
-        commits: [
-          { message: "fix: a" },
-          { message: "feat: b" },
-          { message: "feat!: from a merged branch", parents: 2 },
-        ],
-      });
+    const inPrMerge = { message: "feat!: from a merged branch", parents: 2 };
+    const run = async (strategy: string, commits: { message: string; sha?: string; parents?: number }[], title = "feat!: title is ignored here") => {
+      const github = mockGitHub({ tags: ["v1.0.0"], config: `merge-strategy: ${strategy}`, commits });
+      await createProbot().receive({ name: "pull_request", payload: pullRequestEvent({ title }) as any });
+      return github.written.created;
+    };
 
+    test("merge uses the PR's commits, not its title, and keeps merge commits, which reach the base branch", async () => {
+      const created = await run("merge", [{ message: "fix: a" }, { message: "feat: b" }, inPrMerge]);
+      expect(created.checkRuns[0].output.title).toBe("Releases 2.0.0 (major)");
+    });
+
+    test("rebase uses the PR's commits, not its title, and skips merge commits", async () => {
+      const created = await run("rebase", [{ message: "fix: a" }, { message: "feat: b" }, inPrMerge]);
+      expect(created.checkRuns[0].output.title).toBe("Releases 1.1.0 (minor)");
+    });
+
+    test("a commit and the later commit that reverts it cancel out", async () => {
+      // GitHub lists a PR's commits oldest first.
+      const created = await run("rebase", [
+        { sha: "abc123", message: "feat: x" },
+        { sha: "def456", message: 'Revert "feat: x"\n\nThis reverts commit abc123.' },
+      ]);
+      expect(created.checkRuns[0].output.title).toBe("Releases nothing");
+    });
+
+    test("a PR at GitHub's 250-commit listing limit says the bump may be understated", async () => {
+      const commits = Array.from({ length: 250 }, (_, i) => ({ message: `docs: note ${i}` }));
+      const created = await run("rebase", commits);
+      expect(created.comments[0].body).toContain("first 250 commits");
+      expect(created.checkRuns[0].output.summary).toContain("first 250 commits");
+    });
+  });
+
+  describe("output that is no longer true is updated, not left behind", () => {
+    const existing = {
+      checkRuns: [{ id: 55 }],
+      comments: [{ id: 99, body: "<!-- semantic-release-sentinel -->\nmerging this releases 0.4.0 (minor)" }],
+    };
+
+    test("retargeting a PR to a branch that does not release says so", async () => {
+      const github = mockGitHub({ tags: ["v0.3.0"], base: "develop", ...existing });
       await createProbot().receive({
         name: "pull_request",
-        payload: pullRequestEvent({ title: "feat!: title is ignored here" }) as any,
+        payload: pullRequestEvent({ base: { ref: "develop", sha: "basesha1" } }, { action: "edited" }) as any,
       });
 
-      expect(github.written.created.checkRuns[0].output.title).toBe("Releases 1.1.0 (minor)");
+      expect(github.written.created).toEqual({ checkRuns: [], comments: [] });
+      expect(github.written.updated.checkRuns[0].body.output.title).toBe("Not a release branch");
+      expect(github.written.updated.comments[0].body.body).toContain("not a release branch");
+    });
+
+    test("a config that turns invalid pauses the existing comment", async () => {
+      const github = mockGitHub({ config: "merge-strategy: yolo", ...existing });
+      await createProbot().receive({ name: "pull_request", payload: pullRequestEvent({}, { action: "edited" }) as any });
+
+      expect(github.written.created).toEqual({ checkRuns: [], comments: [] });
+      expect(github.written.updated.checkRuns[0].body.output.title).toBe("Invalid configuration");
+      expect(github.written.updated.comments[0].body.body).toContain("paused");
     });
   });
 

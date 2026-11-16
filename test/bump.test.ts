@@ -53,4 +53,22 @@ describe("computeBump", () => {
       "patch",
     );
   });
+
+  // Commits are newest first, like `git log`, which is the order semantic-release analyzes them in.
+  describe("a commit and its revert cancel out, as in commit-analyzer", () => {
+    const feat = { hash: "abc123", message: "feat: x" };
+    const revert = { hash: "def456", message: 'Revert "feat: x"\n\nThis reverts commit abc123.' };
+
+    test("both in the set release nothing", async () => {
+      expect(await computeBump([revert, feat])).toBe("none");
+    });
+
+    test("other commits still count", async () => {
+      expect(await computeBump([{ hash: "999", message: "fix: y" }, revert, feat])).toBe("patch");
+    });
+
+    test("a revert of a commit outside the set still releases a patch", async () => {
+      expect(await computeBump([{ hash: "zzz", message: "docs: a" }, revert])).toBe("patch");
+    });
+  });
 });
