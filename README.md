@@ -83,13 +83,22 @@ npm start             # run the bot
 
 ## Docker
 
+A published image is at `ghcr.io/awalsh128/semantic-release-sentinel-app` (tags `latest` and the
+release version). It runs as the unprivileged `node` user.
+
 ```sh
-# 1. Build container
+# 1. Build the container (or pull the published image)
 docker build -t semantic-release-sentinel-app .
 
-# 2. Start container
-docker run -e APP_ID=<app-id> -e PRIVATE_KEY=<pem-value> -e WEBHOOK_SECRET=<secret> semantic-release-sentinel-app
+# 2. Start it. Probot listens on localhost by default, which isn't reachable from outside the
+#    container, so set HOST. GitHub sends webhooks to /api/github/webhooks.
+docker run -d -p 3000:3000 -e HOST=0.0.0.0 \
+  -e APP_ID=<app-id> -e WEBHOOK_SECRET=<secret> -e PRIVATE_KEY="$(cat <key>.pem)" \
+  semantic-release-sentinel-app
 ```
+
+Put it behind HTTPS, and expose only the webhook path. `PRIVATE_KEY_PATH` with a mounted file works
+instead of `PRIVATE_KEY`.
 
 ## Contributing
 

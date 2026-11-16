@@ -14,4 +14,7 @@ ENV NODE_ENV="production"
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /usr/src/app/lib ./lib
+# Don't run as root: the app only reads these files, so a flaw in it or a dependency gets an
+# unprivileged user. The node image provides the 'node' user (uid 1000).
+USER node
 CMD [ "npm", "start" ]
