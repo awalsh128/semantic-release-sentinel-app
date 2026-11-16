@@ -41,6 +41,11 @@ updates:
       # Majors follow engines.node, the oldest Node the app supports.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # Version 10 needs conventional-changelog-writer 9, but @semantic-release/release-notes-generator
+      # still loads writer 8, so release notes fail to render. release.yml pins 9.3.1 for the same
+      # reason; lift this and that pin together when the generator supports writer 9.
+      - dependency-name: conventional-changelog-conventionalcommits
+        update-types: ["version-update:semver-major"]
 
   # The base image in the Dockerfile.
   - package-ecosystem: docker
