@@ -36,16 +36,16 @@ Input depends on the merge strategy (config `merge-strategy`, default `squash`):
 | `merge`, `rebase` | Every commit in the PR, excluding merge commits from the base branch. |
 
 Rules follow semantic-release's commit-analyzer defaults with the `conventionalcommits` preset:
-`!` or a `BREAKING CHANGE:` footer is major, `feat` is minor, `fix`, `perf` and `revert` are
-patch, anything else is none. The highest bump across the input wins.
+`!` or a `BREAKING CHANGE:` footer is major, `feat` is minor, `fix` and `perf` are patch, and
+anything else is none. The highest bump across the input wins.
 
 Edge cases:
 
 | Case | Behavior |
 | --- | --- |
-| Revert | Patch, as commit-analyzer does. |
+| Revert | Patch only when the body says `This reverts commit <sha>.` (GitHub's revert button writes it). A bare `Revert "feat: x"` header, such as a PR title, releases nothing, as in semantic-release. |
 | `fix(deps)` | Patch, as commit-analyzer does. Config `deps-bump` can set it to `none`. |
-| Bot release commits (`chore(release): …`, `[skip ci]`) | Ignored. |
+| Bot release commits (`chore(release): …`) | Release nothing, because `chore` does. `[skip ci]` has no effect on the bump, as in semantic-release. |
 | Not a Conventional Commit | Counts as none; the summary says so. |
 | Pre-1.0 breaking change | See [Pre-1.0](#pre-10). |
 | Maintenance branch (`1.x`, `1.2.x`) | The next version is capped to the branch's range, as semantic-release does. |
