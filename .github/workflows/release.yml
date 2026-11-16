@@ -6,6 +6,11 @@ name: Release
 #
 # Start the version line at 0.x by tagging the first commit v0.0.0 before the first run;
 # otherwise semantic-release's first release is always 1.0.0.
+#
+# main is protected by a ruleset (.github/rulesets/main.json) that GITHUB_TOKEN can't bypass, so the
+# tag is pushed with a release-bot GitHub App token. The job runs in the 'release' environment,
+# which only main can use, and holds RELEASE_BOT_APP_ID (variable) and RELEASE_BOT_PK (secret).
+# See docs/release-setup.md.
 on:
   push:
     branches: [main]
@@ -29,6 +34,8 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Only main can use this environment, so only main can mint a token that bypasses its ruleset.
+    environment: release
     # One release at a time; never cancel one that is tagging.
     concurrency:
       group: release
@@ -43,6 +50,17 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0 # semantic-release reads every commit and tag since the last release
+          persist-credentials: false # so git pushes with the release-bot token, not GITHUB_TOKEN
+
+      # GITHUB_TOKEN can't bypass main's ruleset, so the tag is pushed with the release-bot app token.
+      - name: Create release-bot token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PK }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
 
       # The release tools are pinned here rather than in package.json, so their dependencies don't
       # reach the project's audit.
@@ -50,6 +68,9 @@ jobs:
         id: semantic-release
         shell: bash
         env:
+          # semantic-release pushes the tag with GIT_CREDENTIALS and calls the GitHub API (release,
+          # comments) with GITHUB_TOKEN, so the app only needs Contents: write.
+          GIT_CREDENTIALS: x-access-token:${{ steps.app-token.outputs.token }}
           GITHUB_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
