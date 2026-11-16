@@ -1,7 +1,22 @@
+<p align="center">
+  <img src="assets/icon.png" alt="semantic-release-sentinel icon" width="128" height="128">
+</p>
+
 # semantic-release-sentinel-app
 
 > A [Probot](https://github.com/probot/probot) GitHub App that shows, on every pull request, what
 > merging it will release under [semantic-release](https://semantic-release.gitbook.io).
+
+## Features
+
+- 🔮 **Release preview**: see the next version and bump (major, minor, patch or none) before you merge.
+- ✅ **Check run**: a `Release preview` check titled like `Releases 0.4.0 (minor)`, always neutral.
+- 💬 **Sticky comment**: one comment per pull request, updated in place, never duplicated.
+- 📝 **Conventional Commits**: the same rules and `conventionalcommits` preset semantic-release uses.
+- 🔀 **Merge strategies**: analyzes the PR title for squash, or the commits for merge and rebase.
+- 🌿 **Branch-aware**: release branches, wildcards and maintenance ranges like `1.x`.
+- 🔒 **Safe by design**: stateless, read-only, config read from the base branch, never runs PR code.
+- 🕊️ **Advisory**: never blocks a merge.
 
 ## What it does
 

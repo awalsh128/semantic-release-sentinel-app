@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="semantic-release-sentinel icon">
+  <rect width="512" height="512" rx="96" fill="#1f2937"/>
+  <path d="M256 64 120 112v112c0 94 56 163 136 200 80-37 136-106 136-200V112z" fill="#10b981" stroke="#ecfdf5" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M256 160 180 252h46v96h60v-96h46z" fill="#ecfdf5"/>
+</svg>
