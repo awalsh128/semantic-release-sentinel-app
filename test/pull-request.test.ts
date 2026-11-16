@@ -1,5 +1,10 @@
+import { createHmac } from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import nock from "nock";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { createNodeMiddleware } from "probot";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import app from "../src/index.js";
 import { createProbot, mockGitHub, pullRequestEvent } from "./github.js";
 
 describe("pull_request events", () => {
@@ -53,5 +58,167 @@ describe("pull_request events", () => {
     expect(github.written.updated.comments[0].body.body).toContain(
       "merging this releases 1.0.1 (patch)",
     );
+  });
+
+  describe("outcomes other than a release", () => {
+    const run = async (state: Parameters<typeof mockGitHub>[0], pullRequest = {}) => {
+      const github = mockGitHub(state);
+      await createProbot().receive({
+        name: "pull_request",
+        payload: pullRequestEvent(pullRequest) as any,
+      });
+      return {
+        check: github.written.created.checkRuns[0],
+        comment: github.written.created.comments[0].body as string,
+      };
+    };
+
+    test("a PR that releases nothing says so", async () => {
+      const { check, comment } = await run({ tags: ["v1.0.0"] }, { title: "docs: fix typo" });
+      expect(check).toMatchObject({ conclusion: "neutral", output: { title: "Releases nothing" } });
+      expect(comment).toContain("merging this releases nothing");
+    });
+
+    test("with no release tag it says the next version can't be previewed", async () => {
+      const { check, comment } = await run({ tags: [] });
+      expect(check).toMatchObject({
+        conclusion: "neutral",
+        output: { title: "No release history" },
+      });
+      expect(comment).toContain("would release a minor");
+      expect(comment).toContain("no release tag");
+    });
+
+    test("a bump outside a maintenance branch's range is flagged", async () => {
+      const { check, comment } = await run(
+        { tags: ["v1.5.0", "v2.0.0"], config: "release-branches: ['1.x']" },
+        { title: "feat!: drop v1", base: { ref: "1.x", sha: "basesha1" } },
+      );
+      expect(check).toMatchObject({
+        conclusion: "neutral",
+        output: { title: "Version out of range" },
+      });
+      expect(comment).toContain("2.0.0");
+      expect(comment).toContain("1.x");
+    });
+  });
+
+  describe("release branches", () => {
+    const receive = (base: string, config?: string) => {
+      const github = mockGitHub({ tags: ["v1.0.0"], config });
+      return createProbot()
+        .receive({
+          name: "pull_request",
+          payload: pullRequestEvent({ base: { ref: base, sha: "basesha1" } }) as any,
+        })
+        .then(() => github);
+    };
+
+    test("a PR into a branch that is not a release branch gets nothing", async () => {
+      const github = await receive("develop");
+      expect(github.written.created).toEqual({ checkRuns: [], comments: [] });
+      expect(github.requested.filter((path) => !path.includes("/contents/"))).toEqual([]);
+    });
+
+    test("release-branches accepts exact names and * wildcards", async () => {
+      const config = "release-branches: [main, 'release/*']";
+      expect((await receive("release/2.0", config)).written.created.checkRuns).toHaveLength(1);
+      expect((await receive("main", config)).written.created.checkRuns).toHaveLength(1);
+      expect((await receive("releases", config)).written.created.checkRuns).toHaveLength(0);
+    });
+  });
+
+  describe("merge strategies other than squash", () => {
+    test.each(["merge", "rebase"])("%s uses the PR's commits, not its title, and skips merge commits", async (strategy) => {
+      const github = mockGitHub({
+        tags: ["v1.0.0"],
+        config: `merge-strategy: ${strategy}`,
+        commits: [
+          { message: "fix: a" },
+          { message: "feat: b" },
+          { message: "feat!: from a merged branch", parents: 2 },
+        ],
+      });
+
+      await createProbot().receive({
+        name: "pull_request",
+        payload: pullRequestEvent({ title: "feat!: title is ignored here" }) as any,
+      });
+
+      expect(github.written.created.checkRuns[0].output.title).toBe("Releases 1.1.0 (minor)");
+    });
+  });
+
+  test("an invalid config gives a neutral check listing the errors and no comment", async () => {
+    const github = mockGitHub({ config: "merge-strategy: yolo\npaths: {}" });
+
+    await createProbot().receive({ name: "pull_request", payload: pullRequestEvent() as any });
+
+    expect(github.written.created.comments).toEqual([]);
+    expect(github.written.created.checkRuns).toHaveLength(1);
+    const check = github.written.created.checkRuns[0];
+    expect(check).toMatchObject({
+      conclusion: "neutral",
+      output: { title: "Invalid configuration" },
+    });
+    expect(check.output.summary).toContain("'merge-strategy' must be one of: squash, merge, rebase.");
+    expect(check.output.summary).toContain("Unknown option 'paths'.");
+    expect(check.output.summary).toContain(".github/semantic-release-sentinel.yml");
+  });
+
+  describe("webhook signatures", () => {
+    const SECRET = "test-secret";
+    const body = JSON.stringify(pullRequestEvent());
+
+    /** Sends a delivery to the app's real HTTP endpoint and returns the status code. */
+    async function deliver(signature: string): Promise<number> {
+      const probot = createProbot(SECRET, false);
+      const middleware = await createNodeMiddleware(app, { probot, webhooksPath: "/webhooks" });
+      const server = http.createServer(middleware);
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        nock.enableNetConnect("127.0.0.1");
+        const { port } = server.address() as AddressInfo;
+        const status = await new Promise<number>((resolve, reject) => {
+          const request = http.request(
+            {
+              host: "127.0.0.1",
+              port,
+              path: "/webhooks",
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "content-length": Buffer.byteLength(body),
+                "x-github-event": "pull_request",
+                "x-github-delivery": "delivery-1",
+                "x-hub-signature-256": signature,
+              },
+            },
+            (response) => {
+              response.resume();
+              response.on("end", () => resolve(response.statusCode ?? 0));
+            },
+          );
+          request.on("error", reject);
+          request.end(body);
+        });
+        return status;
+      } finally {
+        server.close();
+      }
+    }
+
+    test("a delivery with a bad signature is rejected and nothing is written", async () => {
+      const github = mockGitHub({ tags: ["v1.0.0"] });
+      expect(await deliver("sha256=" + "0".repeat(64))).toBe(400);
+      expect(github.written.created).toEqual({ checkRuns: [], comments: [] });
+    });
+
+    test("a correctly signed delivery is processed", async () => {
+      const github = mockGitHub({ tags: ["v1.0.0"] });
+      const signature = "sha256=" + createHmac("sha256", SECRET).update(body).digest("hex");
+      expect(await deliver(signature)).toBe(200);
+      await vi.waitFor(() => expect(github.written.created.checkRuns).toHaveLength(1));
+    });
   });
 });

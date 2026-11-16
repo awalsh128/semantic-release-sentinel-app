@@ -21,8 +21,9 @@ merging it will release, before it merges. It is advisory: it never blocks a mer
 
 Per pull request, kept current on every event:
 
-1. One **check run**, `Release preview`, conclusion `neutral`. Title: `Releases 0.4.0 (minor)` or
-   `Releases nothing`. The summary lists the commits that decided the bump.
+1. One **check run**, `Release preview`, conclusion `neutral`, updated in place on the same head
+   commit and recreated for a new one. Title: `Releases 0.4.0 (minor)` or
+   `Releases nothing`. 
 2. One **sticky comment**, found by a hidden marker (`<!-- semantic-release-sentinel -->`) and
    updated in place, never duplicated: "merging this releases 0.4.0 (minor)".
 
@@ -59,8 +60,9 @@ changes to minor below 1.0 in its own release rules sets `pre-1-0-breaking: mino
 
 ## Next version
 
-The latest `v*` tag reachable from the base branch (tag format from config, default `v${version}`),
-plus the bump. No tag means no release history, and the preview says so instead of guessing.
+The highest release tag in the repository that matches the tag format (config `tag-format`, default
+`v${version}`), plus the bump. Prerelease tags are ignored. Tags are not checked for reachability
+from the base branch yet, so a tag that exists only on another branch can be picked up. No tag means no release history, and the preview says so instead of guessing.
 
 ## Configuration
 

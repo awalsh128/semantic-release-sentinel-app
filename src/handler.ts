@@ -1,7 +1,7 @@
 import type { Context } from "probot";
 import { computeBump } from "./bump.js";
-import { parseConfig } from "./config.js";
-import { COMMENT_MARKER, renderReport, type Report } from "./report.js";
+import { parseConfig, type Config } from "./config.js";
+import { COMMENT_MARKER, renderConfigError, renderReport, type Report } from "./report.js";
 import { nextVersion } from "./version.js";
 
 const CONFIG_PATH = ".github/semantic-release-sentinel.yml";
@@ -13,10 +13,15 @@ export async function handlePullRequest(context: Context<"pull_request">): Promi
   const pr = context.payload.pull_request;
 
   const parsed = parseConfig(await readConfig(context, pr.base.ref));
-  if (!parsed.ok) return;
+  if (!parsed.ok) {
+    await upsertCheck(context, renderConfigError(parsed.errors));
+    return;
+  }
   const config = parsed.config;
+  if (!isReleaseBranch(pr.base.ref, config.releaseBranches)) return;
 
-  const bump = await computeBump([pr.title], { depsBump: config.depsBump });
+  const messages = await commitMessages(context, config.mergeStrategy);
+  const bump = await computeBump(messages, { depsBump: config.depsBump });
   const refs = await octokit.paginate(octokit.rest.git.listMatchingRefs, {
     owner,
     repo,
@@ -34,7 +39,7 @@ export async function handlePullRequest(context: Context<"pull_request">): Promi
   const report = renderReport(version, bump);
 
   await upsertCheck(context, report);
-  await upsertComment(context, report.comment);
+  if (report.comment !== null) await upsertComment(context, report.comment);
 }
 
 /** Updates this head commit's check run if it exists, so edits never stack up duplicates. */
@@ -77,6 +82,33 @@ async function upsertComment(context: Context<"pull_request">, body: string): Pr
   if (existing) await octokit.rest.issues.updateComment({ owner, repo, comment_id: Number(existing.id), body });
   else await octokit.rest.issues.createComment({ owner, repo, issue_number, body });
 }
+
+/** What semantic-release will see after the merge: the PR title if squashed, else its commits. */
+async function commitMessages(
+  context: Context<"pull_request">,
+  strategy: Config["mergeStrategy"],
+): Promise<string[]> {
+  const pr = context.payload.pull_request;
+  if (strategy === "squash") return [pr.title];
+  const { owner, repo } = context.repo();
+  const commits = await context.octokit.paginate(context.octokit.rest.pulls.listCommits, {
+    owner,
+    repo,
+    pull_number: pr.number,
+    per_page: 100,
+  });
+  return commits.filter((c) => c.parents.length <= 1).map((c) => c.commit.message);
+}
+
+/** True when the branch equals a configured name or matches a pattern, where * matches any characters. */
+function isReleaseBranch(branch: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    const source = pattern.split("*").map(escapeRegExp).join(".*");
+    return new RegExp(`^${source}$`).test(branch);
+  });
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
 
 async function readConfig(context: Context<"pull_request">, ref: string) {
   const { owner, repo } = context.repo();

@@ -11,9 +11,11 @@ const privateKey = fs.readFileSync(path.join(here, "fixtures/mock-cert.pem"), "u
 const API = "https://api.github.com";
 const REPO = "/repos/acme/demo";
 
-export function createProbot(): Probot {
+/** `load: false` leaves the app unloaded, for createNodeMiddleware, which loads it itself. */
+export function createProbot(secret?: string, load = true): Probot {
   const probot = new Probot({
     appId: 123,
+    secret,
     privateKey,
     // No throttling or retries, so failures show up at once.
     Octokit: ProbotOctokit.defaults((options: {}) => ({
@@ -22,7 +24,7 @@ export function createProbot(): Probot {
       throttle: { enabled: false },
     })),
   });
-  probot.load(app);
+  if (load) probot.load(app);
   return probot;
 }
 
