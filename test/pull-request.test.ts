@@ -180,6 +180,72 @@ describe("pull_request events", () => {
     });
   });
 
+  describe("the number of API calls per event stays bounded", () => {
+    const pages = (github: { requested: string[] }, pattern: RegExp) =>
+      github.requested.filter((path) => pattern.test(path)).length;
+    const TAG_REQUESTS = /matching-refs\/tags/;
+    const COMMENT_REQUESTS = /\/issues\/7\/comments/;
+    const receive = (title = "feat: add thing") =>
+      createProbot().receive({ name: "pull_request", payload: pullRequestEvent({ title }) as any });
+
+    test("only tags that start with the tag-format prefix are requested", async () => {
+      const github = mockGitHub({
+        config: 'tag-format: "api-v${version}"',
+        tags: ["v9.0.0", "api-v1.2.0", "api-v1.1.0", "nightly"],
+      });
+      await receive();
+
+      expect(github.requested.some((path) => /matching-refs\/tags(%2F|\/)api-v/.test(path))).toBe(true);
+      expect(github.written.created.checkRuns[0].output.title).toBe("Releases 1.3.0 (minor)");
+    });
+
+    // 1,500 tags is 15 pages; the app reads 10.
+    const manyTags = (count: number) => Array.from({ length: count }, (_, i) => `v0.${i}.0`);
+
+    test("tags beyond 1,000 are not read, and the preview says it may be inaccurate", async () => {
+      const github = mockGitHub({ tags: manyTags(1500) });
+      await receive();
+
+      expect(pages(github, TAG_REQUESTS)).toBe(10);
+      expect(github.written.created.comments[0].body).toContain("first 1000 tags");
+      expect(github.written.created.checkRuns[0].output.summary).toContain("first 1000 tags");
+    });
+
+    test("exactly 1,000 tags are all read and get no note", async () => {
+      const github = mockGitHub({ tags: manyTags(1000) });
+      await receive();
+
+      expect(pages(github, TAG_REQUESTS)).toBe(10);
+      expect(github.written.created.comments[0].body).not.toContain("first 1000 tags");
+    });
+
+    const unrelated = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: i + 1,
+        body: `comment ${i}`,
+        performed_via_github_app: null,
+        user: { type: "User" },
+      }));
+
+    test("only the first 500 comments are scanned, then a new comment is created", async () => {
+      const github = mockGitHub({ tags: ["v1.0.0"], comments: unrelated(700) });
+      await receive();
+
+      expect(pages(github, COMMENT_REQUESTS)).toBe(5);
+      expect(github.written.created.comments).toHaveLength(1);
+    });
+
+    test("the app's own comment within the first 500 is found and updated", async () => {
+      const comments = unrelated(700);
+      comments[450] = { id: 99999, body: "<!-- semantic-release-sentinel -->\nold" } as any;
+      const github = mockGitHub({ tags: ["v1.0.0"], comments });
+      await receive();
+
+      expect(github.written.created.comments).toEqual([]);
+      expect(github.written.updated.comments[0].path).toBe("/repos/acme/demo/issues/comments/99999");
+    });
+  });
+
   describe("output that is no longer true is updated, not left behind", () => {
     const existing = {
       checkRuns: [{ id: 55 }],

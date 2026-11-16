@@ -87,6 +87,12 @@ from the base branch yet, so a tag that exists only on another branch can be pic
   each see no comment and create one. The second then goes stale. It is rare and harmless, and a
   fix (re-list and delete the newer duplicate) is not worth the extra calls yet.
 - **Tags are not checked for reachability** from the base branch.
+- **API calls per event are bounded.** Only tags that start with the `tag-format` prefix are
+  listed, and only the first 1,000 of them. GitHub lists tags alphabetically, so in a repository
+  with more, the highest version can be missed; the preview then says the next version may be
+  inaccurate. Only the first 500 comments on a pull request are scanned for the app's own, which is
+  created with the first preview. In a thread that long a missing comment is created again. Without
+  the caps, a repository with many tags or comments would cost many calls on every event.
 
 ## Configuration
 

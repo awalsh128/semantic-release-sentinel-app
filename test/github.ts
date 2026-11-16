@@ -10,6 +10,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const privateKey = fs.readFileSync(path.join(here, "fixtures/mock-cert.pem"), "utf-8");
 const API = "https://api.github.com";
 const REPO = "/repos/acme/demo";
+const PAGE_SIZE = 100;
 
 /** `load: false` leaves the app unloaded, for createNodeMiddleware, which loads it itself. */
 export function createProbot(secret?: string, load = true): Probot {
@@ -80,18 +81,44 @@ export function mockGitHub(state: RepoState = {}) {
 
   const reads = (
     url: string | RegExp,
-    reply: unknown | ((query: URLSearchParams) => unknown),
+    reply: unknown | ((query: URLSearchParams, path: string) => unknown),
     status = 200,
     query: (query: Record<string, string>) => boolean = () => true,
   ) =>
     scope
       .get(url)
       .query(query)
+      .times(30) // a paged list is requested once per page
       .optionally()
       .reply(function () {
         requested.push(this.req.path);
         const params = new URL(this.req.path, API).searchParams;
-        return [status, typeof reply === "function" ? reply(params) : reply];
+        return [status, typeof reply === "function" ? reply(params, this.req.path) : reply];
+      });
+
+  /** Like GitHub: 100 items per page, and a Link header with rel="next" while more remain. */
+  const pagedReads = (
+    url: string | RegExp,
+    items: (params: URLSearchParams, path: string) => unknown[],
+  ) =>
+    scope
+      .get(url)
+      .query(true)
+      .times(30)
+      .optionally()
+      .reply(function () {
+        requested.push(this.req.path);
+        const params = new URL(this.req.path, API).searchParams;
+        const all = items(params, this.req.path);
+        const page = Number(params.get("page") ?? 1);
+        const next = new URL(this.req.path, API);
+        next.searchParams.set("page", String(page + 1));
+        const more = page * PAGE_SIZE < all.length;
+        return [
+          200,
+          all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+          more ? { link: `<${next}>; rel="next"` } : {},
+        ];
       });
 
   reads(
@@ -104,10 +131,13 @@ export function mockGitHub(state: RepoState = {}) {
     // The config must come from the base branch, so a pull request can't change its own rules.
     (query) => query.ref === (state.base ?? "main"),
   );
-  reads(
-    /^\/repos\/acme\/demo\/git\/matching-refs\/tags(%2F|\/)$/,
-    (state.tags ?? []).map((tag) => ({ ref: `refs/tags/${tag}` })),
-  );
+  // The tag prefix is part of the path, as with GitHub, which only returns the refs that match it.
+  pagedReads(/^\/repos\/acme\/demo\/git\/matching-refs\/tags(%2F|\/)[^/?]*/, (_params, path) => {
+    const prefix = decodeURIComponent(path.split("?")[0].replace(/^.*\/matching-refs\/tags(%2F|\/)/, ""));
+    return (state.tags ?? [])
+      .filter((tag) => tag.startsWith(prefix))
+      .map((tag) => ({ ref: `refs/tags/${tag}` }));
+  });
   reads(
     `${REPO}/pulls/7/commits`,
     (state.commits ?? []).map((c, index) => ({
@@ -128,8 +158,7 @@ export function mockGitHub(state: RepoState = {}) {
     200,
     (query) => query.check_name === "Release preview" && query.app_id === String(APP_ID),
   );
-  reads(
-    `${REPO}/issues/7/comments`,
+  pagedReads(`${REPO}/issues/7/comments`, () =>
     (state.comments ?? []).map((comment) => ({
       user: { type: "Bot" },
       performed_via_github_app: { id: APP_ID },
