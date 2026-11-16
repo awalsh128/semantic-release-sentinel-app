@@ -2,7 +2,9 @@
 # the default branch, so a pull request can't change it. Only release.yml running on main gets a
 # token, with just the permission needed to push the release tag.
 issuer: https://token.actions.githubusercontent.com
-subject: repo:awalsh128/semantic-release-sentinel-app:ref:refs/heads/main
+# GitHub puts the immutable owner and repository ids in this repository's OIDC subject, so the
+# subject has them too. They also stop a renamed or recreated repository from matching.
+subject: repo:awalsh128@2087466/semantic-release-sentinel-app@1459438369:ref:refs/heads/main
 claim_pattern:
   job_workflow_ref: awalsh128/semantic-release-sentinel-app/\.github/workflows/release\.yml@refs/heads/main
 

@@ -58,5 +58,7 @@ Run **Release** from the Actions tab on `main` with **dry-run** ticked. A passin
 Octo STS token can push to `main`. Then merge a `fix:` or `feat:` pull request to cut a real
 release.
 
-If the token exchange fails, the Octo STS App's checks and the action's log say why; a typo in the
-policy's `subject` or `claim_pattern` is the usual cause.
+If the token exchange fails with `token does not match trust policy`, compare the policy with the
+claims the action prints in its log (`OIDC Token Claims`). This repository's `subject` carries the
+immutable owner and repository ids (`repo:<owner>@<id>/<repo>@<id>:ref:refs/heads/main`), so a
+policy written with plain names doesn't match.
