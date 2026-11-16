@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # Creates or updates branch rulesets on a repo from JSON files (default: .github/rulesets/*.json).
 #
-# Usage: apply_rulesets.sh [-r owner/repo] [-a bypass_app_id] [ruleset.json ...]
+# Usage: apply_rulesets.sh [-r owner/repo] [ruleset.json ...]
 #   -r  Target repo (default: the current directory's GitHub repo).
-#   -a  GitHub App ID allowed to bypass the "main" ruleset, so the release workflow can push tags
-#       (the Octo STS App, 801323; see docs/release-setup.md).
+# The main and release tags rulesets name the Octo STS App (801323) as their bypass actor, so install
+# it first (see docs/release-setup.md).
 set -euo pipefail
 
 repo=""
-app_id=""
-while getopts "r:a:h" opt; do
+while getopts "r:h" opt; do
   case "$opt" in
     r) repo="$OPTARG" ;;
-    a) app_id="$OPTARG" ;;
-    *) sed -n '2,6p' "$0"; exit 1 ;;
+    *) sed -n '2,7p' "$0"; exit 1 ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -24,10 +22,6 @@ files=("$@")
 for file in "${files[@]}"; do
   name="$(jq -r .name "$file")"
   body="$(cat "$file")"
-  if [[ "$name" == "main" && -n "$app_id" ]]; then
-    body="$(jq --argjson id "$app_id" \
-      '.bypass_actors = [{actor_id: $id, actor_type: "Integration", bypass_mode: "always"}]' <<<"$body")"
-  fi
   id="$(gh api "repos/$repo/rulesets" --jq ".[] | select(.name == \"$name\") | .id")"
   if [[ -n "$id" ]]; then
     gh api -X PUT "repos/$repo/rulesets/$id" --input - <<<"$body" >/dev/null

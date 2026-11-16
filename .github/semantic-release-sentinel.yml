@@ -1,0 +1,4 @@
+# Pull requests go into staging, which releases candidates (see docs/release-setup.md), so that is
+# the branch whose pull requests get the release preview. main only fast-forwards from staging.
+merge-strategy: squash
+release-branches: [staging]
