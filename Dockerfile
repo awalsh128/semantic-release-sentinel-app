@@ -1,4 +1,4 @@
-FROM node:20-slim AS build
+FROM node:22-slim AS build
 WORKDIR /usr/src/app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -6,7 +6,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:20-slim
+FROM node:22-slim
 # Links the image to this repository on GHCR.
 LABEL org.opencontainers.image.source="https://github.com/awalsh128/semantic-release-sentinel-app"
 WORKDIR /usr/src/app
