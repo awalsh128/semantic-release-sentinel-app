@@ -1,24 +1,34 @@
-<p align="center">
-  <img src="assets/icon.png" alt="semantic-release-sentinel icon" width="128" height="128">
-</p>
+# <img src="assets/icon.png" alt="Semantic Release Sentinel" height="60" align="center"> Semantic Release Sentinel
 
-# semantic-release-sentinel-app
+[![GitHub release](https://img.shields.io/github/v/release/awalsh128/semantic-release-sentinel-app?label=release)](https://github.com/awalsh128/semantic-release-sentinel-app/releases)
+[![staging CI](https://img.shields.io/github/actions/workflow/status/awalsh128/semantic-release-sentinel-app/ci.yml?label=staging&branch=staging)](https://github.com/awalsh128/semantic-release-sentinel-app/actions/workflows/ci.yml?query=branch%3Astaging)
+[![License](https://img.shields.io/github/license/awalsh128/semantic-release-sentinel-app)](https://github.com/awalsh128/semantic-release-sentinel-app/blob/main/LICENSE)
 
-> A [Probot](https://github.com/probot/probot) GitHub App that shows, on every pull request, what
-> merging it will release under [semantic-release](https://semantic-release.gitbook.io).
-
-## Features
+A [Probot](https://github.com/probot/probot) GitHub App that shows, on every pull request, what merging it
+will release under [semantic-release](https://semantic-release.gitbook.io).
 
 - 🔮 **Release preview**: see the next version and bump (major, minor, patch or none) before you merge.
-- ✅ **Check run**: a `Release preview` check titled like `Releases 0.4.0 (minor)`, always neutral.
-- 💬 **Sticky comment**: one comment per pull request, updated in place, never duplicated.
-- 📝 **Conventional Commits**: the same rules and `conventionalcommits` preset semantic-release uses.
+- 💬 **Check run and sticky comment**: one neutral check and one comment per pull request, updated in place.
 - 🔀 **Merge strategies**: analyzes the PR title for squash, or the commits for merge and rebase.
 - 🌿 **Branch-aware**: release branches, wildcards and maintenance ranges like `1.x`.
-- 🔒 **Safe by design**: stateless, read-only, config read from the base branch, never runs PR code.
-- 🕊️ **Advisory**: never blocks a merge.
+- 🔒 **Safe by design**: stateless, read-only, advisory, and never runs code from a pull request.
 
-## What it does
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/awalsh128)
+
+If you find this project useful, please consider [sponsoring it](https://github.com/sponsors/awalsh128) and
+show some ❤️ for open source maintainers.
+
+## Quick Start
+
+1. Register a GitHub App from [`app.yml`](app.yml): permissions Metadata, Contents and Pull
+   requests (read), Checks and Issues (write); events `pull_request`, `merge_group` and `push`.
+   Only `pull_request` is acted on for now. The manifest doesn't update an existing App, so mirror
+   changes in the App's settings.
+2. Run the app with `APP_ID`, `PRIVATE_KEY` and `WEBHOOK_SECRET` set (see [`.env.example`](.env.example)),
+   and install the App on your repositories.
+3. Optionally add `.github/semantic-release-sentinel.yml` to the repository's base branch.
+
+## What it posts
 
 On every pull request into a release branch it works out the version bump from the
 [Conventional Commits](https://www.conventionalcommits.org) semantic-release will see, and posts:
@@ -30,16 +40,6 @@ On every pull request into a release branch it works out the version bump from t
 It is advisory and never blocks a merge. It is stateless (it recomputes from git data on every
 event), reads only git data and API responses, and never runs code from a pull request. See the
 [design](docs/design.md) for the rules and edge cases.
-
-## Use it
-
-1. Register a GitHub App from [`app.yml`](app.yml): permissions Metadata, Contents and Pull
-   requests (read), Checks and Issues (write); events `pull_request`, `merge_group` and `push`.
-   Only `pull_request` is acted on for now. The manifest doesn't update an existing App, so mirror
-   changes in the App's settings.
-2. Run the app with `APP_ID`, `PRIVATE_KEY` and `WEBHOOK_SECRET` set (see [`.env.example`](.env.example)),
-   and install the App on your repositories.
-3. Optionally add `.github/semantic-release-sentinel.yml` to the repository's base branch.
 
 ## Configuration
 
@@ -100,12 +100,4 @@ docker run -d -p 3000:3000 -e HOST=0.0.0.0 \
 Put it behind HTTPS, and expose only the webhook path. `PRIVATE_KEY_PATH` with a mounted file works
 instead of `PRIVATE_KEY`.
 
-## Contributing
-
-If you have suggestions for how semantic-release-sentinel-app could be improved, or want to report a bug, open an issue! We'd love all and any contributions.
-
-For more, check out the [Contributing Guide](CONTRIBUTING.md).
-
-## License
-
-[ISC](LICENSE) © 2026 awalsh128
+See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
