@@ -12,5 +12,5 @@
   ],
   "durable_objects": { "bindings": [{ "name": "SENTINEL", "class_name": "Sentinel" }] },
   // Replaces the older "migrations" array; don't use both.
-  "exports": [{ "name": "Sentinel", "type": "durable-object", "storage": "sqlite" }],
+  "exports": { "Sentinel": { "type": "durable-object", "storage": "sqlite" } },
 }
