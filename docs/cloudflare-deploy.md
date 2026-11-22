@@ -34,12 +34,42 @@ steps by hand.
 The Worker lives in [`cloudflare/`](../cloudflare): `wrangler.jsonc` declares the container (built
 from the root `Dockerfile`) and its Durable Object, and `worker.ts` starts the container with the
 secrets as environment variables and forwards `POST /api/github/webhooks` to it. Everything else
-returns 404. It sits outside `src/`, so `npm run build` doesn't compile it.
+returns 404. It sits outside `src/`, so `npm run build` doesn't compile it; type-check it with
+`npx tsc -p cloudflare`.
+
+It uses libraries instead of hand-written code: `@octokit/webhooks-methods` verifies the signature,
+`@octokit/request` reads GitHub's IP ranges, and `ipaddr.js` matches them. Wrangler bundles them
+from `devDependencies`, so the container image is unchanged. Probot already depends on the two
+Octokit packages.
 
 It is modelled on Cloudflare's
 [Containers environment variables and secrets example](https://developers.cloudflare.com/containers/examples/env-vars-and-secrets/);
 if your Wrangler version names a field differently, follow that page. Update `compatibility_date`
 in `wrangler.jsonc` when you deploy.
+
+### What the Worker rejects
+
+It checks each request in this order, cheapest first, and only a request that passes all of them
+wakes the container:
+
+| Check | Rejects with |
+| --- | --- |
+| Not `POST /api/github/webhooks` | 404 |
+| Missing `X-GitHub-Event` or `X-GitHub-Delivery` | 400 |
+| No `Content-Length`, or over 25 MB (GitHub's cap) | 411, 413 |
+| `X-Hub-Signature-256` isn't the valid HMAC of the body under `WEBHOOK_SECRET` (constant-time) | 401 |
+| Caller's IP isn't in the `hooks` ranges of [`api.github.com/meta`](https://api.github.com/meta) | 403 |
+| Event isn't `ping` or `pull_request` | 202, acknowledged and dropped |
+
+The signature is the real control. The IP allowlist covers a leaked secret. The ranges are cached
+for an hour in the Durable Object and the last known list is used if a refresh fails; with no list
+at all it answers 503 and GitHub can redeliver. The container still verifies the signature itself.
+
+When the app starts handling another event, add it to `FORWARDED_EVENTS` in `cloudflare/worker.ts`.
+
+Optional extras in the Cloudflare dashboard, which also stop abusive traffic before it runs the
+Worker: a [rate limiting rule](https://developers.cloudflare.com/waf/rate-limiting-rules/) on the
+webhook path, and a custom domain with `workers_dev` turned off.
 
 ## 2. Set the secrets
 
