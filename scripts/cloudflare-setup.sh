@@ -41,11 +41,16 @@ keep_existing() {
   [[ ! "$reply" =~ ^[Yy] ]]
 }
 
+[[ -t 0 ]] || die "run this in an interactive terminal: it prompts for secrets and a browser login, and there is no terminal attached here"
 command -v npx >/dev/null 2>&1 || die "node and npm are required"
 docker info >/dev/null 2>&1 || die "Docker isn't running; wrangler needs it to build the image"
+docker buildx version >/dev/null 2>&1 || die "the Docker buildx plugin is missing; wrangler needs it to build the image"
 
 echo "1/4 Cloudflare login"
-wrangler whoami >/dev/null 2>&1 || wrangler login
+if ! wrangler whoami >/dev/null 2>&1; then
+  wrangler login || die "Cloudflare login failed"
+  wrangler whoami >/dev/null 2>&1 || die "still not logged in to Cloudflare"
+fi
 
 echo "2/4 Deploy (builds the image; this takes a few minutes)"
 DEPLOY_LOG=$(mktemp)
