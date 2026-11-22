@@ -7,3 +7,5 @@ coverage
 lib
 tsconfig.tsbuildinfo
 .agents/notes/
+cloudflare/.dev.vars
+cloudflare/.wrangler

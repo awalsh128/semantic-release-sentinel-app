@@ -100,4 +100,9 @@ docker run -d -p 3000:3000 -e HOST=0.0.0.0 \
 Put it behind HTTPS, and expose only the webhook path. `PRIVATE_KEY_PATH` with a mounted file works
 instead of `PRIVATE_KEY`.
 
+## Cloudflare
+
+To host it on Cloudflare Containers, including setting up the secrets, see
+[docs/cloudflare-deploy.md](docs/cloudflare-deploy.md).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
