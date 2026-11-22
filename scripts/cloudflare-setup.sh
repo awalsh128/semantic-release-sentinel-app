@@ -15,7 +15,10 @@ cd "$(dirname "$0")/../cloudflare"
 CONFIG="wrangler.jsonc"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-wrangler() { npx --yes wrangler "$@"; }
+# Pinned so every run uses the version this was tested with; npx fetches it on first use.
+# Bump it by hand when you want a newer wrangler.
+WRANGLER_VERSION="4.166.0"
+wrangler() { npx --yes "wrangler@$WRANGLER_VERSION" "$@"; }
 
 copy_to_clipboard() {
   if command -v wl-copy >/dev/null 2>&1; then wl-copy
@@ -44,7 +47,13 @@ keep_existing() {
 [[ -t 0 ]] || die "run this in an interactive terminal: it prompts for secrets and a browser login, and there is no terminal attached here"
 command -v npx >/dev/null 2>&1 || die "node and npm are required"
 docker info >/dev/null 2>&1 || die "Docker isn't running; wrangler needs it to build the image"
-docker buildx version >/dev/null 2>&1 || die "the Docker buildx plugin is missing; wrangler needs it to build the image"
+if ! docker buildx version >/dev/null 2>&1; then
+  case "$(uname -s)" in
+    Darwin) hint="brew install docker-buildx" ;;
+    *) hint="sudo apt install docker-buildx (or docker-buildx-plugin, from Docker's apt repository)" ;;
+  esac
+  die "the Docker buildx plugin is missing and wrangler needs it to build the image. Install it with: $hint"
+fi
 
 echo "1/4 Cloudflare login"
 if ! wrangler whoami >/dev/null 2>&1; then

@@ -13,7 +13,9 @@ before you start; they change faster than this page.
 - A Cloudflare account with Containers available on its plan.
 - Docker running locally (`docker info`). Wrangler builds and pushes the image on deploy. The image
   must run on `linux/amd64`.
-- Wrangler 4.136.0 or later (`npx wrangler --version`), logged in with `npx wrangler login`.
+- Docker with the buildx plugin (`docker buildx version`). The script checks for it and prints the
+  install command if it is missing.
+- Wrangler needs no install: the script runs a pinned version through `npx`, and logs you in.
 - A GitHub App registered from [`app.yml`](../app.yml), with its App ID and a generated private key
   (`.pem`). See the Quick Start in the [README](../README.md).
 
