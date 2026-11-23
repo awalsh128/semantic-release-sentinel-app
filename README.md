@@ -1,8 +1,18 @@
-# <img src="assets/icon.png" alt="Semantic Release Sentinel" height="60" align="center"> Semantic Release Sentinel
+<p align="center">
+  <img src="assets/icon.png" alt="Semantic Release Sentinel logo" width="128" height="128">
+</p>
 
-[![GitHub release](https://img.shields.io/github/v/release/awalsh128/semantic-release-sentinel-app?label=release)](https://github.com/awalsh128/semantic-release-sentinel-app/releases)
-[![staging CI](https://img.shields.io/github/actions/workflow/status/awalsh128/semantic-release-sentinel-app/ci.yml?label=staging&branch=staging)](https://github.com/awalsh128/semantic-release-sentinel-app/actions/workflows/ci.yml?query=branch%3Astaging)
-[![License](https://img.shields.io/github/license/awalsh128/semantic-release-sentinel-app)](https://github.com/awalsh128/semantic-release-sentinel-app/blob/main/LICENSE)
+<h1 align="center">Semantic Release Sentinel</h1>
+
+<p align="center">
+  A <a href="https://github.com/probot/probot">Probot</a> GitHub App that previews the version each pull request will release under <a href="https://semantic-release.gitbook.io">semantic-release</a>.
+</p>
+
+<p align="center">
+  <a href="https://github.com/awalsh128/semantic-release-sentinel-app/releases"><img src="https://img.shields.io/github/v/release/awalsh128/semantic-release-sentinel-app?label=release" alt="GitHub release"></a>
+  <a href="https://github.com/awalsh128/semantic-release-sentinel-app/actions/workflows/ci.yml?query=branch%3Astaging"><img src="https://img.shields.io/github/actions/workflow/status/awalsh128/semantic-release-sentinel-app/ci.yml?label=staging&branch=staging" alt="staging CI"></a>
+  <a href="https://github.com/awalsh128/semantic-release-sentinel-app/blob/main/LICENSE"><img src="https://img.shields.io/github/license/awalsh128/semantic-release-sentinel-app" alt="License"></a>
+</p>
 
 A [Probot](https://github.com/probot/probot) GitHub App that shows, on every pull request, what merging it
 will release under [semantic-release](https://semantic-release.gitbook.io).
@@ -13,10 +23,17 @@ will release under [semantic-release](https://semantic-release.gitbook.io).
 - 🌿 **Branch-aware**: release branches, wildcards and maintenance ranges like `1.x`.
 - 🔒 **Safe by design**: stateless, read-only, advisory, and never runs code from a pull request.
 
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/awalsh128)
+<!-- prettier-ignore -->
+<p align="center">
+  <a href="https://github.com/sponsors/awalsh128"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor awalsh128"></a>
+</p>
 
-If you find this project useful, please consider [sponsoring it](https://github.com/sponsors/awalsh128) and
-show some ❤️ for open source maintainers.
+<p align="center">
+  Free and open source, and kept up by one person.<br />
+  If it saves you time, <a href="https://github.com/sponsors/awalsh128">sponsor it monthly</a> or
+  <a href="https://github.com/sponsors/awalsh128?frequency=one-time">leave a small one-time tip</a>. Every bit
+  helps.
+</p>
 
 ## Quick Start
 
@@ -47,11 +64,11 @@ Every option is optional. The file is read from the **base branch**, never the p
 pull request can't change the rules it is judged by.
 
 ```yaml
-merge-strategy: squash        # squash | merge | rebase
-release-branches: [main]      # exact names or * wildcards, e.g. [main, "1.x", "release/*"]
-tag-format: "v${version}"     # semantic-release's tagFormat
-pre-1-0-breaking: major       # major | minor
-deps-bump: patch              # patch | none: what fix(deps) releases
+merge-strategy: squash # squash | merge | rebase
+release-branches: [main] # exact names or * wildcards, e.g. [main, "1.x", "release/*"]
+tag-format: "v${version}" # semantic-release's tagFormat
+pre-1-0-breaking: major # major | minor
+deps-bump: patch # patch | none: what fix(deps) releases
 ```
 
 - `merge-strategy` decides what is analyzed: the PR title for `squash`, the PR's commits for
